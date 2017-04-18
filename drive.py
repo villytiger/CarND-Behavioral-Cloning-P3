@@ -16,11 +16,14 @@ from keras.models import load_model
 import h5py
 from keras import __version__ as keras_version
 
+import collections
+import statistics
+
 sio = socketio.Server()
 app = Flask(__name__)
 model = None
 prev_image_array = None
-
+angles = collections.deque([0] * 10)
 
 class SimplePIController:
     def __init__(self, Kp, Ki):
@@ -63,9 +66,14 @@ def telemetry(sid, data):
         image_array = np.asarray(image)
         steering_angle = float(model.predict(image_array[None, :, :, :], batch_size=1))
 
+        angles.popleft()
+        angles.append(steering_angle)
+
+        steering_angle = statistics.mean(angles)
+
         throttle = controller.update(float(speed))
 
-        print(steering_angle, throttle)
+        print(steering_angle)
         send_control(steering_angle, throttle)
 
         # save frame
@@ -120,6 +128,9 @@ if __name__ == '__main__':
               ', but the model was built using ', model_version)
 
     model = load_model(args.model)
+
+    # Force opening cudnn handle, otherwise it will fail on running simulator 
+    model.predict(np.zeros((1, 160, 320, 3)), batch_size=1)
 
     if args.image_folder != '':
         print("Creating image folder at {}".format(args.image_folder))
